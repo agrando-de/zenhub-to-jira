@@ -10,7 +10,7 @@ https://confluence.atlassian.com/adminjiracloud/issue-fields-and-statuses-776636
 Other JIRA import fields:
 https://confluence.atlassian.com/adminjiracloud/importing-data-from-csv-776636762.html
 
-When done, make open source and post here: https://github.com/ZenHubIO/support/issues/1070
+Post here: https://github.com/ZenHubIO/support/issues/1070
 """
 import csv
 import datetime
@@ -25,7 +25,7 @@ ZENHUB_REPO_ID = ''
 ZENHUB_HEADERS = {
     'X-Authentication-Token': '',
 }
-REPO = 'agrando-de/agr-animal'  # format is username/repo
+REPO = 'username/repo'  # format is username/repo
 
 
 def iterate_pages(repository):
