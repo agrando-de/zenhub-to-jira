@@ -12,3 +12,6 @@ Export zenhub boards to JIRA CSV format
       * For Status, it's suggested to import issues and once done, arrange their statuses to match the current state of Zenhub. It's a bit of a pain, but better than the other importer
   * Inside of admin settings, click System -> External System Import
     * This importer does not correctly map issue types. It converts everything to a story, even if you specify the mapping of Epic -> Epic, Task -> Task, etc., it does not work
+* Both JIRA importers have a limit of 250 issues for CSV.
+  * https://community.atlassian.com/t5/Jira-questions/JIRA-Cloud-Bulk-Import-Record-Limit/qaq-p/351391
+  * 03.2020: It is not possible to change this via settings. Suggested to chunk your csv files
