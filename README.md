@@ -4,6 +4,7 @@ Export zenhub boards to JIRA CSV format
 
 ## Gotchas:
 * This script can import issues marked as Done, but this becomes much more of a pain, so that functionality has been commented out. It's suggested to only import current / backlog issues.
+* When mapping labels, if you don't want to import a label and map it to blank, the label will still be imported. Instead, you should modify the script so it does not include the label.
 * 03.2020: JIRA has two importers that have different functionality:
   * Inside of a project, click the '+' on the sidebar, at the top-right of the modal, click 'Import Issues'
     * This importer does not allow Status or Comments to be imported
