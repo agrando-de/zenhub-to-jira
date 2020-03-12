@@ -23,9 +23,9 @@ AUTH = (GITHUB_USER, GITHUB_PASSWORD)
 ZENHUB_AUTHENTICATION_TOKEN = ''
 ZENHUB_REPO_ID = ''
 ZENHUB_HEADERS = {
-    'X-Authentication-Token': '',
+    'X-Authentication-Token': ZENHUB_AUTHENTICATION_TOKEN,
 }
-REPO = 'username/repo'  # format is username/repo
+REPO = ''  # format is username/repo
 
 
 def iterate_pages(repository):
@@ -86,8 +86,13 @@ def get_labels_nr():
 
 
 def write_issues(results):
-    for result in results:
-        for issue in result:
+    for page in results:
+        for issue in page:
+
+            # We're only importing active issues
+            if issue.get('state') == 'closed':
+                continue
+
             issue_type = None
             issue_resolution = None
             issue_milestone = None
@@ -102,25 +107,24 @@ def write_issues(results):
                     'https://api.zenhub.io/p1/repositories/{}/issues/{}'.format(ZENHUB_REPO_ID, issue_number),
                     headers=ZENHUB_HEADERS)
 
-                # save the request to a json object
                 zenhub_json_object = zenhub_request.json()
 
-                # get 'is_epic' because it throws error if it doesn't exist and the specific issue type will be not
-                # assigned at all
+                # As of 03.2020, JIRA does not create "Refactoring" and "Task" issues types, instead it makes them "Story" types.
+                # It is advised to leave the "Refactoring" label and do a data migration inside of JIRA to remove the label and convert the issue type
                 if zenhub_json_object.get('is_epic'):
-                    if zenhub_json_object['is_epic'] is False:
-                        issue_type = "Task"
-                    elif zenhub_json_object['is_epic'] is True:
-                        issue_type = "Epic"
-                # if 'is_epic' doesn't exist, the issue type is assigned to 'Task'
-                elif not zenhub_json_object.get('is_epic'):
-                    issue_type = "Task"
+                    issue_type = 'Epic'
+                elif 'bug' in [label['name'] for label in issue['labels']]:
+                    issue_type = 'Bug'
+                elif 'refactor' in [label['name'] for label in issue['labels']]:
+                    issue_type = 'Refactoring'
+                else:
+                    issue_type = 'Task'
 
                 issue_status = zenhub_json_object['pipeline']['name']
                 if zenhub_json_object.get('estimate'):
                     issue_estimation = zenhub_json_object['estimate']['value']
                 else:
-                    issue_estimation = 0
+                    issue_estimation = ''
 
                 if issue.get('assignee') is not None:
                     assignee = issue['assignee']['login']
@@ -145,94 +149,74 @@ def write_issues(results):
                     date_resolved = datetime.datetime.strptime(issue['closed_at'], date_format_rest)
                     resolved_at = date_resolved.strftime(date_format_jira)
 
-                comments_list = []
+                # Imported markdown doesn't look good in JIRA, remove the headers
+                description = issue['body'].replace('#', '').replace('##', '').replace('###', '').strip() + '\n\n'
+
+                # Append comments to description. JIRA import breaks when trying to import comments
+                comments = []
                 if issue['comments'] > 0:
                     comments_request = requests.get(issue['comments_url'], auth=AUTH)
                     for comment in comments_request.json():
-                        issue_comments = 'Username: {} Content: {};'.format(comment['user']['login'], comment['body'])
-                        comments_list.append(issue_comments)
-                comments_list = comments_list + [''] * (comments_max_nr - len(comments_list))
+                        issue_comments = 'Username: {}\n{};'.format(comment['user']['login'], comment['body'])
+                        comments.append(issue_comments)
+                comments = comments + [''] * (comments_max_nr - len(comments))
+                description += '\n'.join(comments)
 
-                labels_list = []
+                # Add a label `imported_datetime`. Makes it easier to identify batch imported issues.
+                labels_list = ['imported_{}'.format(datetime.datetime.now().strftime('%d.%m.%y-%H:%M'))]
                 labels = issue['labels']
                 for label in labels:
                     label_name = label['name']
                     labels_list.append(label_name)
-
-                    if label_name == 'wontfix':
-                        issue_resolution = "won\'t do"
-                    elif label_name == 'duplicate':
-                        issue_resolution = 'duplicate'
-                    elif label_name == "bug":
-                        issue_resolution = 'bug'
 
                 labels_list = labels_list + [None] * (labels_max_nr - len(labels_list))
 
                 if issue_status is 'Closed':
                     issue_resolution = 'Done'
 
-                print("Number: ", issue['number'])
-                print("Title: ", issue['title'].encode('utf-8'))
-                print("Type: ", issue_type)
-                print("Status: ", issue_status)
-                print("Resolution: ", issue_resolution)
-                print("Label name: ", *labels_list)
-                print("Body: ", issue['body'].encode('utf-8'))
-                print("Assignee", assignee)
-                print("Reporter", reporter)
-                print("Created at: ", created_at)
-                print("Updated at: ", updated_at)
-                print("Resolved at:", resolved_at)
-                print("Estimation: ", issue_estimation)
-                print("Fix Version / Milestone: ", issue_milestone)
-                print("Comments: ", *comments_list)
-
                 csvout.writerow([
-                    issue['number'],  # Key
-                    issue['title'].strip(),  # Summary
-                    issue_type,  # Type
-                    issue_status,  # Status
-                    issue_resolution,  # resolution
-                    issue_milestone,  # Milestone, Fix Version
-                    issue['body'].strip(),  # Description
-                    assignee,  # assignee
-                    reporter,  # reporter
-                    created_at,  # created
-                    updated_at,  # updated
-                    resolved_at,  # Date issue closed at
-                    issue_estimation,  # estimate
+                    issue['title'].strip(),
+                    issue_type,
+                    issue_status,
+                    # issue_resolution,
+                    # issue_milestone,
+                    description,
+                    # assignee,
+                    # reporter,
+                    # created_at,
+                    # updated_at,
+                    # resolved_at,
+                    issue_estimation,
                     *labels_list,  # labels (multiple labels in multiple columns)
-                    *comments_list  # comments (multiple comments in multiple columns)
                 ])
 
 
-# Call and save the JSON object created by ´iterate_pages()´
-total_result = iterate_pages(REPO)
-comments_max_nr = get_comments_max_nr()
-labels_max_nr = get_labels_nr()
+if __name__ == '__main__':
+    # Call and save the JSON object created by ´iterate_pages()´
+    total_result = iterate_pages(REPO)
+    comments_max_nr = get_comments_max_nr()
+    labels_max_nr = get_labels_nr()
 
-labels_header_list = ['Labels'] * labels_max_nr
-comments_header_list = ['Comment Body'] * comments_max_nr
-csvfile = '%s-issues.csv' % (REPO.replace('/', '-'))
-csvout = csv.writer(open(csvfile, 'w', newline=''))
+    # Create enough labels columns to hold max number of labels
+    labels_header_list = ['Labels'] * labels_max_nr
+    csvfile = '%s-issues.csv' % (REPO.replace('/', '-'))
+    csvout = csv.writer(open(csvfile, 'w', newline=''))
 
-# Write CSV Header
-csvout.writerow((
-    'Key',  # Github issue number
-    'Summary',  # Github title
-    'Type',  # Need Zenhub API for this (task, epic, bug)
-    'Status',  # Need Zenhub API for this (in which pipeline is located)
-    'Resolution',  # Need Zenhub API for this (done, won't do, duplicate, cannot reproduce) - for software projects
-    'Fix Version(s)',  # milestone
-    'Description',  # Description
-    'Assignee',  # Assignee
-    'Reporter',  # Created by
-    'Created',  # Created at
-    'Updated',  # Updated at
-    'Resolved',  # Closed at
-    'Estimate',  # Estimate
-    *labels_header_list,  # Labels
-    *comments_header_list,  # Comments
-))
+    # Write CSV Header
+    csvout.writerow((
+        'Summary',
+        'Type',  # Need Zenhub API for this (task, epic, bug)
+        'Status',  # Need Zenhub API for this (in which pipeline is located)
+        # 'Resolution',  # Need Zenhub API for this (done, won't do, duplicate, cannot reproduce) - for software projects
+        # 'Fix Version(s)',  # milestone
+        'Description',
+        # 'Assignee',
+        # 'Reporter',
+        # 'Created',
+        # 'Updated',
+        # 'Resolved',
+        'Estimate',
+        *labels_header_list,
+    ))
 
-write_issues(total_result)
+    write_issues(total_result)
